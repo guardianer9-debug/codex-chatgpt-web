@@ -14,6 +14,7 @@ import { Icon, type IconName } from "./icons";
 import type {
   BrowserInteractionMode,
   BrowserState,
+  CodexIntegrationMode,
   DoctorReport,
   Language,
   LauncherSnapshot,
@@ -343,7 +344,8 @@ function LauncherShell({
 }) {
   const interactionSetupComplete = snapshot.state.coreSetupComplete === true
     && (snapshot.state.browserInteractionMode === "manual"
-      || snapshot.state.codexCatalogVerified === true);
+      || snapshot.state.codexCatalogVerified === true
+      || snapshot.state.integrationMode === "external-provider");
   const firstRunZeroRiskSetup = snapshot.state.browserInteractionMode === "manual"
     && snapshot.state.coreSetupComplete !== true;
   const [surface, setSurface] = useState<Surface>(
@@ -1135,7 +1137,7 @@ function SetupSurface({
     updateState((await api!.snapshot()).state);
   });
   const install = () => run(async () => {
-    await api!.setupCore();
+    await api!.setupCore(snapshot.state.integrationMode);
     updateState((await api!.snapshot()).state);
   });
   const setZeroRiskPro = (enabled: boolean) => run(async () => {
@@ -1151,6 +1153,15 @@ function SetupSurface({
       title={devProfile ? copy.devSetupTitle : copy.setupTitle}
     >
       <SectionHeading label={devProfile ? copy.devCoreSetup : copy.coreSetup} />
+      {!devProfile ? (
+        <CodexRoutingPicker
+          copy={copy}
+          disabled={busy}
+          mode={snapshot.state.integrationMode}
+          onChange={(mode) => void run(async () => updateState(await api!.setIntegrationMode(mode)))}
+          configured={snapshot.state.coreSetupComplete === true}
+        />
+      ) : null}
       <div className="setup-list">
         {!manualInteraction ? <>
           <SetupRow
@@ -1178,8 +1189,13 @@ function SetupSurface({
           action={snapshot.state.coreSetupComplete
             ? devProfile ? copy.devReinstall : copy.reinstall
             : devProfile ? copy.devInstall : copy.install}
-          complete={snapshot.state.codexCatalogVerified === true}
-          description={devProfile ? copy.devStepInstallBody : copy.stepInstallBody}
+          complete={snapshot.state.codexCatalogVerified === true
+            || snapshot.state.integrationMode === "external-provider"}
+          description={devProfile
+            ? copy.devStepInstallBody
+            : snapshot.state.integrationMode === "external-provider"
+              ? copy.externalProviderSetupBody
+              : copy.stepInstallBody}
           disabled={busy || (!snapshot.smokePassed && snapshot.state.coreSetupComplete !== true)}
           index={manualInteraction ? 1 : 3}
           onAction={install}
@@ -1196,7 +1212,7 @@ function SetupSurface({
         />
       </div>
 
-      {!devProfile && snapshot.state.codexRestartRequired ? (
+      {!devProfile && snapshot.state.integrationMode !== "external-provider" && snapshot.state.codexRestartRequired ? (
         <NoticeRow icon="alert" tone="warning">
           {copy.restartCodex}
         </NoticeRow>
@@ -1205,7 +1221,9 @@ function SetupSurface({
       <SectionHeading label="MCP" meta={manualInteraction ? copy.required : copy.optional} spaced />
       <button
         className="next-surface-row"
-        disabled={!manualInteraction && !snapshot.state.codexCatalogVerified}
+        disabled={!manualInteraction
+          && snapshot.state.integrationMode !== "external-provider"
+          && !snapshot.state.codexCatalogVerified}
         onClick={showMcp}
         type="button"
       >
@@ -1218,6 +1236,48 @@ function SetupSurface({
         <Icon name="chevron" />
       </button>
     </ContentSurface>
+  );
+}
+
+function CodexRoutingPicker({
+  copy,
+  disabled,
+  mode,
+  onChange,
+  configured,
+}: {
+  copy: Copy;
+  disabled: boolean;
+  mode: CodexIntegrationMode;
+  onChange: (mode: CodexIntegrationMode) => void;
+  configured: boolean;
+}) {
+  return (
+    <div className="setting-row codex-routing-picker" role="group" aria-label={copy.codexRouting}>
+      <div className="setting-copy">
+        <strong>{copy.codexRouting}</strong>
+        <span>{mode === "external-provider" ? copy.externalProviderStatus : copy.directRoute}</span>
+      </div>
+      <div className="segmented-control">
+        <button
+          aria-pressed={mode === "direct-route"}
+          disabled={disabled}
+          onClick={() => onChange("direct-route")}
+          type="button"
+        >
+          {copy.directRoute}
+        </button>
+        <button
+          aria-pressed={mode === "external-provider"}
+          disabled={disabled}
+          onClick={() => onChange("external-provider")}
+          type="button"
+        >
+          {copy.externalProvider}
+        </button>
+      </div>
+      {configured && mode === "external-provider" ? <small>{copy.externalProviderStatus}</small> : null}
+    </div>
   );
 }
 
@@ -1637,6 +1697,17 @@ function SettingsSurface({
       setBusy(false);
     }
   };
+  const setIntegrationMode = async (mode: CodexIntegrationMode) => {
+    setBusy(true);
+    setError(null);
+    try {
+      updateState(await api!.setIntegrationMode(mode));
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
   const uninstallIntegration = async () => {
     setBusy(true);
     setError(null);
@@ -1657,6 +1728,15 @@ function SettingsSurface({
     <ContentSurface narrow title={devProfile ? copy.devSettingsTitle : copy.settingsTitle}>
       <SectionHeading label={copy.general} />
       <div className="settings-list">
+        {!devProfile ? (
+          <CodexRoutingPicker
+            copy={copy}
+            disabled={busy}
+            mode={snapshot.state.integrationMode}
+            onChange={(mode) => void setIntegrationMode(mode)}
+            configured={snapshot.state.coreSetupComplete === true}
+          />
+        ) : null}
         {!devProfile ? <SettingRow body={copy.launchAtLoginBody} flushAfter label={copy.launchAtLogin}>
           <Switch
             checked={snapshot.state.autoStart}
@@ -1707,7 +1787,7 @@ function SettingsSurface({
         </SettingRow>
       </div>
 
-      {!devProfile && snapshot.state.codexRestartRequired ? (
+      {!devProfile && snapshot.state.integrationMode !== "external-provider" && snapshot.state.codexRestartRequired ? (
         <NoticeRow icon="alert" tone="warning">
           {copy.restartCodex}
         </NoticeRow>

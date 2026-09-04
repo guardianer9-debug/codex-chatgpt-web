@@ -9,6 +9,7 @@ function subscription(channel, listener) {
 contextBridge.exposeInMainWorld("codexWebLauncher", {
   snapshot: () => ipcRenderer.invoke("launcher:snapshot"),
   setLanguage: (language) => ipcRenderer.invoke("launcher:set-language", language),
+  setIntegrationMode: (mode) => ipcRenderer.invoke("launcher:set-integration-mode", mode),
   openSocial: (target) => ipcRenderer.invoke("launcher:open-social", target),
   completeOnboarding: (language, browserInteractionMode) => ipcRenderer.invoke(
     "launcher:complete-onboarding",
@@ -36,7 +37,7 @@ contextBridge.exposeInMainWorld("codexWebLauncher", {
   doctor: () => ipcRenderer.invoke("launcher:doctor"),
   cancelTurns: () => ipcRenderer.invoke("launcher:cancel-turns"),
   uninstallIntegration: () => ipcRenderer.invoke("launcher:uninstall-integration"),
-  setupCore: () => ipcRenderer.invoke("launcher:setup-core"),
+  setupCore: (mode) => ipcRenderer.invoke("launcher:setup-core", mode),
   setupMcp: (input) => ipcRenderer.invoke("launcher:setup-mcp", input),
   setMcpStep: (step) => ipcRenderer.invoke("launcher:set-mcp-step", step),
   setAutostart: (enabled) => ipcRenderer.invoke("launcher:autostart", enabled),

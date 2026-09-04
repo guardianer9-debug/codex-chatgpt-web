@@ -237,6 +237,15 @@ test("the configured launcher exposes no persistent bridge opt-out", () => {
   assert.match(electronMain, /runtimeSupervisor\.startIfConfigured\(\)[\s\S]*?runtimeHost\.connectBridgeRoute\(\)/);
 });
 
+test("launcher exposes explicit Codex routing ownership choices", () => {
+  assert.match(appSource, /CodexRoutingPicker/);
+  assert.match(appSource, /setIntegrationMode\(mode\)/);
+  assert.match(appSource, /externalProviderStatus/);
+  assert.match(preloadSource, /setIntegrationMode: .*launcher:set-integration-mode/);
+  assert.match(electronMain, /launcher:set-integration-mode/);
+  assert.match(electronMain, /codexRestartRequired: canonical !== "external-provider"/);
+});
+
 test("MCP connection remains unavailable until the model catalog is verified", () => {
   assert.match(
     appSource,
