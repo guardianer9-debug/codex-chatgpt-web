@@ -15,6 +15,25 @@ test("DEV harness configuration cannot bind a Responses listener", () => {
   expect(() => startServer(config)).toThrow("cannot start a Responses listener");
 });
 
+test("external-provider configuration starts an independent loopback Responses listener", async () => {
+  const config = {
+    ...defaultConfig("browser-only"),
+    codexIntegrationMode: "external-provider" as const,
+    port: 0,
+  };
+  const server = startServer(config);
+  try {
+    expect(server.port).toBeGreaterThan(0);
+    expect(await (await fetch(`http://127.0.0.1:${server.port}/healthz`)).json()).toMatchObject({
+      service: "codex-chatgpt-web",
+      status: "ok",
+      mode: "browser-only",
+    });
+  } finally {
+    await server.stop();
+  }
+});
+
 async function waitForTurnCount(turns: HttpTurnCounter, expected: number): Promise<void> {
   const deadline = Date.now() + 1_000;
   while (turns.count() !== expected && Date.now() < deadline) await Bun.sleep(5);
