@@ -371,6 +371,13 @@ async function doctorCommand(args: string[]): Promise<void> {
 async function routeCommand(args: string[]): Promise<void> {
   const action = args.shift() ?? "status";
   assertNoArgs(args);
+  if (action !== "status" && existsSync(getConfigPath())) {
+    const configured = loadConfigForSetup();
+    if (configured.codexIntegrationMode === "external-provider") {
+      stdout.write(`${JSON.stringify({ changed: false, active: false, skipped: true, reason: "external-provider" }, null, 2)}\n`);
+      return;
+    }
+  }
   const result = action === "status"
     ? (() => {
         const status = inspectCodexIntegration();

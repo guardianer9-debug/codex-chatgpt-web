@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AppConfig } from "./config";
-import { atomicWriteFile, getConfigPath, saveConfig } from "./config";
+import { atomicWriteFile, getConfigPath, loadConfigForSetup, ownsCodexRoute, saveConfig } from "./config";
 import {
   CODEX_REALTIME_WEBRTC_CALL_BASE_URL,
   getCodexConfigPath,
@@ -45,6 +45,16 @@ import {
   verifyManagedJournalState,
   verifyRestoredRoute,
 } from "./codex-integration-route";
+
+function assertCodexRouteOwnership(config?: Pick<AppConfig, "codexIntegrationMode">): void {
+  let current = config;
+  if (!current && existsSync(getConfigPath())) {
+    try { current = loadConfigForSetup(); } catch { /* route commands may run before app setup */ }
+  }
+  if (!ownsCodexRoute(current)) {
+    throw new Error("Codex route is externally managed; switch to direct-route before changing Codex routing");
+  }
+}
 
 function installConfiguredRoute(
   baseline: string,
@@ -111,6 +121,7 @@ export function setCodexSubagentProtocol(
   config: AppConfig,
   protocol: AppConfig["subagentProtocol"],
 ): CodexIntegrationJournal {
+  assertCodexRouteOwnership(config);
   const status = inspectCodexIntegration();
   if (!status.installed) throw new Error("Codex integration is not installed; run setup first");
   if (!status.active) {
@@ -153,6 +164,7 @@ export function preflightCodexIntegration(
   config: AppConfig,
   options: InstallCodexIntegrationOptions = {},
 ): void {
+  assertCodexRouteOwnership(config);
   const configPath = getCodexConfigPath();
   const configExists = existsSync(configPath);
   const currentText = configExists ? readFileSync(configPath, "utf8") : "";
@@ -212,6 +224,7 @@ export function installCodexIntegration(
   config: AppConfig,
   options: InstallCodexIntegrationOptions = {},
 ): CodexIntegrationJournal {
+  assertCodexRouteOwnership(config);
   const configPath = getCodexConfigPath();
   mkdirSync(dirname(configPath), { recursive: true, mode: 0o700 });
   const configExists = existsSync(configPath);
@@ -322,6 +335,7 @@ export function installCodexIntegration(
 }
 
 export function deactivateCodexIntegration(): SetCodexIntegrationActiveResult {
+  assertCodexRouteOwnership();
   const existing = readJournal();
   if (!existing) return { changed: false, active: false };
   if (existing.version === 2) {
@@ -350,6 +364,7 @@ export function deactivateCodexIntegration(): SetCodexIntegrationActiveResult {
 }
 
 export function activateCodexIntegration(): SetCodexIntegrationActiveResult {
+  assertCodexRouteOwnership();
   const existing = readJournal();
   if (!existing) throw new Error("Codex integration is not installed");
   if (existing.version === 2) {
@@ -413,6 +428,7 @@ export function activateCodexIntegration(): SetCodexIntegrationActiveResult {
 }
 
 export function uninstallCodexIntegration(): UninstallCodexIntegrationResult {
+  assertCodexRouteOwnership();
   const journal = readJournal();
   if (!journal) return { changed: false };
   if (!existsSync(journal.configPath)) throw new Error(`Codex config is missing: ${journal.configPath}`);

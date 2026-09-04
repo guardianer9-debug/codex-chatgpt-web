@@ -79,7 +79,7 @@ describe("reversible native Codex route integration", () => {
     });
   });
 
-  test("keeps the built-in openai provider without changing native feature defaults", () => {
+test("keeps the built-in openai provider without changing native feature defaults", () => {
     const { codexHome } = fixture();
     const configPath = join(codexHome, "config.toml");
     const original = `model = "gpt-5.6-sol"\n\n[features]\nmulti_agent = false # user choice\ngoals = true\n`;
@@ -827,4 +827,23 @@ describe("reversible native Codex route integration", () => {
     expect(readFileSync(configPath, "utf8")).not.toContain("multi_agent");
   });
 
+});
+
+test("external-provider config rejects every Codex route mutator without creating files", () => {
+  const { codexHome, appHome } = fixture();
+  const configPath = join(codexHome, "config.toml");
+  const original = 'openai_base_url = "http://127.0.0.1:10100/v1"\n';
+  writeFileSync(configPath, original);
+  const config = { ...defaultConfig("browser-only"), codexIntegrationMode: "external-provider" as const };
+  saveConfig(config);
+  expect(() => preflightCodexIntegration(config)).toThrow(/externally managed/);
+  expect(() => installCodexIntegration(config)).toThrow(/externally managed/);
+  expect(() => activateCodexIntegration()).toThrow(/externally managed/);
+  expect(() => deactivateCodexIntegration()).toThrow(/externally managed/);
+  expect(() => uninstallCodexIntegration()).toThrow(/externally managed/);
+  expect(readFileSync(configPath, "utf8")).toBe(original);
+  expect(existsSync(getCodexJournalPath())).toBe(false);
+  expect(existsSync(getCodexJournalRecoveryPath())).toBe(false);
+  expect(existsSync(getCodexModelsCachePath())).toBe(false);
+  expect(existsSync(join(appHome, "config.json"))).toBe(true);
 });

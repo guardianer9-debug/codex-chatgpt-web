@@ -16,6 +16,10 @@ export type BrowserInteractionMode = "automatic" | "manual";
 export type CodexIntegrationMode = "direct-route" | "external-provider";
 export type SubagentProtocol = "compatibility-v1" | "native";
 
+export function ownsCodexRoute(config: Pick<AppConfig, "codexIntegrationMode"> | undefined): boolean {
+  return (config?.codexIntegrationMode ?? "direct-route") === "direct-route";
+}
+
 /**
  * ChatGPT caches a connector's public MCP contract by connector identity. The direct turn-token
  * contract therefore has a new identity instead of mutating the retired connector in place.
