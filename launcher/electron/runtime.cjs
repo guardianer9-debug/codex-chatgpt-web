@@ -413,6 +413,7 @@ class RuntimeHost {
         owner: "none",
         mode: "browser-only",
         codexIntegrationMode: "direct-route",
+        explicitCodexIntegrationMode: false,
         serialized: null,
       };
     }
@@ -425,9 +426,20 @@ class RuntimeHost {
       codexIntegrationMode: config.codexIntegrationMode === "external-provider"
         ? "external-provider"
         : "direct-route",
+      explicitCodexIntegrationMode: config.codexIntegrationMode === "external-provider"
+        || config.codexIntegrationMode === "direct-route",
       serialized: JSON.stringify(config),
       config: structuredClone(config),
     };
+  }
+
+  migrateLegacyExternalProviderMode() {
+    const snapshot = this.runtimeConfigSnapshot();
+    if (!snapshot.configured || snapshot.explicitCodexIntegrationMode
+      || !snapshot.config || typeof this.supervisor.configPath !== "string") return false;
+    const next = { ...snapshot.config, codexIntegrationMode: "external-provider" };
+    writePrivateFileAtomic(this.supervisor.configPath, `${JSON.stringify(next, null, 2)}\n`);
+    return true;
   }
 
   mcpCredentialsConfigured(requestedMode) {
@@ -995,11 +1007,16 @@ class RuntimeHost {
     }
   }
 
-  async setupCore() {
+  async setupCore(codexIntegrationMode) {
     this.assertProductionProfile("Codex integration setup");
     if (this.currentOperation()) throw new Error(`Another launcher operation is active: ${this.currentOperation()}`);
     const existing = this.runtimeConfigSnapshot();
     const mode = existing.mode;
+    const integrationMode = codexIntegrationMode === "external-provider"
+      ? "external-provider"
+      : codexIntegrationMode === "direct-route"
+        ? "direct-route"
+        : existing.codexIntegrationMode;
     const interactionMode = existing.configured
       ? existing.config?.browserInteractionMode ?? this.browserInteractionMode()
       : this.browserInteractionMode();
@@ -1015,14 +1032,18 @@ class RuntimeHost {
         mode: interactionMode,
         refreshCapabilities: interactionMode === "automatic",
       }),
-      ...codexIntegrationArgs(existing.codexIntegrationMode, { replace: true }),
+      ...codexIntegrationArgs(integrationMode, { replace: true }),
       "--acknowledge-unofficial",
       "--restart-service",
     ];
     if (mode === "full") args.push("--app-name", this.setupConnectorName());
     const result = await this.runSetup("core-setup", args, {
-      message: "Installing ChatGPT Web models into Codex",
-      successMessage: "Codex integration installed",
+      message: integrationMode === "external-provider"
+        ? "Starting the independent OpenAI Responses provider"
+        : "Installing ChatGPT Web models into Codex",
+      successMessage: integrationMode === "external-provider"
+        ? "External Responses provider is ready"
+        : "Codex integration installed",
       timeoutMs: CORE_SETUP_TIMEOUT_MS,
     });
     return { ...result, mode };

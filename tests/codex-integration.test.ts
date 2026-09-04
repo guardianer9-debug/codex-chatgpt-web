@@ -869,3 +869,43 @@ test("external-provider lifecycle tolerates an entirely Codex-free machine", () 
   expect(tracked.map(path => existsSync(path) ? readFileSync(path) : null)).toEqual(before);
   expect(tracked.every(path => !existsSync(path))).toBe(true);
 });
+
+test("malformed application config fails closed before any Codex mutation", () => {
+  const { codexHome, appHome } = fixture();
+  const configPath = join(codexHome, "config.toml");
+  const original = 'openai_base_url = "http://127.0.0.1:10100/v1"\n';
+  writeFileSync(configPath, original);
+  mkdirSync(appHome, { recursive: true });
+  writeFileSync(join(appHome, "config.json"), "{ malformed");
+  expect(() => activateCodexIntegration()).toThrow(/Cannot safely determine Codex route ownership/);
+  expect(readFileSync(configPath, "utf8")).toBe(original);
+  expect(existsSync(getCodexJournalPath())).toBe(false);
+  expect(existsSync(getCodexJournalRecoveryPath())).toBe(false);
+  expect(existsSync(getCodexModelsCachePath())).toBe(false);
+});
+
+test("direct and external modes round-trip route ownership explicitly", () => {
+  const { codexHome } = fixture();
+  const configPath = join(codexHome, "config.toml");
+  const original = 'openai_base_url = "https://router.example/v1"\nmodel_provider = "openai"\n';
+  writeFileSync(configPath, original);
+  const direct = nativeConfig("browser-only");
+  saveConfig(direct);
+  installCodexIntegration(direct, { replaceExistingRoute: true });
+  expect(readFileSync(configPath, "utf8")).not.toBe(original);
+
+  // Explicit Direct → External relinquishes the journal-owned route before persisting the mode.
+  expect(uninstallCodexIntegration()).toEqual({ changed: true });
+  saveConfig({ ...direct, codexIntegrationMode: "external-provider" });
+  const externalFiles = [configPath, getCodexJournalPath(), getCodexJournalRecoveryPath(), getCodexModelsCachePath()];
+  const externalSnapshot = externalFiles.map(path => existsSync(path) ? readFileSync(path) : null);
+  expect(() => preflightCodexIntegration({ ...direct, codexIntegrationMode: "external-provider" })).toThrow(/externally managed/);
+  expect(externalFiles.map(path => existsSync(path) ? readFileSync(path) : null)).toEqual(externalSnapshot);
+
+  // Explicit External → Direct can install and activate again.
+  const restoredDirect = { ...direct, codexIntegrationMode: "direct-route" as const };
+  saveConfig(restoredDirect);
+  installCodexIntegration(restoredDirect, { replaceExistingRoute: true });
+  expect(activateCodexIntegration()).toEqual({ changed: false, active: true });
+  expect(readFileSync(configPath, "utf8")).toContain("127.0.0.1");
+});

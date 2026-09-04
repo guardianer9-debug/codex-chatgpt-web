@@ -49,7 +49,14 @@ import {
 function assertCodexRouteOwnership(config?: Pick<AppConfig, "codexIntegrationMode">): void {
   let current = config;
   if (!current && existsSync(getConfigPath())) {
-    try { current = loadConfigForSetup(); } catch { /* route commands may run before app setup */ }
+    try {
+      current = loadConfigForSetup();
+    } catch (error) {
+      throw new Error(
+        `Cannot safely determine Codex route ownership from ${getConfigPath()}: `
+        + `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
   if (!ownsCodexRoute(current)) {
     throw new Error("Codex route is externally managed; switch to direct-route before changing Codex routing");

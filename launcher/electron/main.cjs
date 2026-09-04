@@ -161,8 +161,9 @@ function startCatalogVerificationMonitor({ logger, stateStore }) {
 }
 
 async function restoreCodexRouteAfterRuntimeFailure({ logger, stateStore }) {
-  if (stateStore?.read?.().integrationMode === "external-provider"
-    || runtimeHost?.runtimeConfigSnapshot?.().codexIntegrationMode === "external-provider") {
+  const runtimeSnapshot = runtimeHost?.runtimeConfigSnapshot?.();
+  if (runtimeSnapshot?.codexIntegrationMode === "external-provider"
+    || (!runtimeSnapshot?.configured && stateStore?.read?.().integrationMode === "external-provider")) {
     return { restored: false, skipped: true };
   }
   try {
@@ -413,6 +414,13 @@ function validateBrowserInteractionMode(value) {
   return value;
 }
 
+function validateCodexIntegrationMode(value) {
+  if (value !== "direct-route" && value !== "external-provider") {
+    throw new Error("Codex integration mode must be direct-route or external-provider");
+  }
+  return value;
+}
+
 function validateBounds(value) {
   if (!value || typeof value !== "object") throw new Error("Browser bounds are required");
   for (const key of ["x", "y", "width", "height"]) {
@@ -455,6 +463,25 @@ function registerIpc({ logger, stateStore }) {
   handle("launcher:set-language", (_event, language) => {
     const state = stateStore.update({ language: validateLanguage(language) });
     updateTrayMenu(state.language);
+    return state;
+  });
+  handle("launcher:set-integration-mode", async (_event, rawMode) => {
+    if (IS_DEV_PROFILE) throw new Error("The isolated DEV launcher has no Codex routing mode");
+    const mode = validateCodexIntegrationMode(rawMode);
+    const runtime = runtimeHost.runtimeConfigSnapshot();
+    if (!runtime.configured || runtime.codexIntegrationMode === mode) {
+      return stateStore.update({ integrationMode: mode });
+    }
+    await runtimeHost.setupCore(mode);
+    const canonical = runtimeHost.runtimeConfigSnapshot().codexIntegrationMode;
+    const state = stateStore.update({
+      integrationMode: canonical,
+      coreSetupComplete: true,
+      codexRestartRequired: canonical !== "external-provider",
+    });
+    send("launcher:state-changed", state);
+    if (canonical === "external-provider") stopCatalogVerificationMonitor();
+    else startCatalogVerificationMonitor({ logger, stateStore });
     return state;
   });
   handle("launcher:open-social", async (_event, target) => {
@@ -666,15 +693,21 @@ function registerIpc({ logger, stateStore }) {
     stopCatalogVerificationMonitor();
     return { cancelled: false, state };
   });
-  handle("launcher:setup-core", async () => {
+  handle("launcher:setup-core", async (_event, requestedMode) => {
     const setupState = stateStore.read();
+    const selectedMode = IS_DEV_PROFILE
+      ? "direct-route"
+      : validateCodexIntegrationMode(requestedMode ?? setupState.integrationMode);
+    const externalProvider = selectedMode === "external-provider";
     if (setupState.browserInteractionMode === "automatic") {
       const browser = await browserHost.probeAuthentication();
       if (!browser.authenticated) {
         throw new Error(
           IS_DEV_PROFILE
             ? "Sign in to the isolated DEV ChatGPT profile before configuring the harness"
-            : "Sign in to ChatGPT before installing the Codex integration",
+            : externalProvider
+              ? "Sign in to ChatGPT before starting the external Responses provider"
+              : "Sign in to ChatGPT before installing the Codex integration",
         );
       }
     }
@@ -682,16 +715,20 @@ function registerIpc({ logger, stateStore }) {
       && !setupState.coreSetupComplete
       && !(smokePassedThisSession || smokePassedForCurrentVersion(setupState))) {
       throw new Error(
-        IS_DEV_PROFILE
-          ? "Run the browser smoke test before configuring the DEV harness"
-          : "Run the browser smoke test before installing the Codex integration",
+          IS_DEV_PROFILE
+            ? "Run the browser smoke test before configuring the DEV harness"
+            : externalProvider
+              ? "Run the browser smoke test before starting the external Responses provider"
+              : "Run the browser smoke test before installing the Codex integration",
       );
     }
-    const result = IS_DEV_PROFILE ? await runtimeHost.setupDevCore() : await runtimeHost.setupCore();
+    const result = IS_DEV_PROFILE ? await runtimeHost.setupDevCore() : await runtimeHost.setupCore(selectedMode);
+    const canonicalMode = IS_DEV_PROFILE ? "direct-route" : runtimeHost.runtimeConfigSnapshot().codexIntegrationMode;
     stateStore.update({
       coreSetupComplete: true,
+      integrationMode: canonicalMode,
       codexCatalogVerified: IS_DEV_PROFILE ? true : false,
-      codexRestartRequired: IS_DEV_PROFILE ? false : true,
+      codexRestartRequired: IS_DEV_PROFILE || canonicalMode === "external-provider" ? false : true,
       zeroRiskProEnabled: runtimeHost.runtimeConfigSnapshot().config?.zeroRiskProEnabled === true,
       ...(result.mode === "full" ? {
         mcpRuntimeInstalled: true,
@@ -708,8 +745,9 @@ function registerIpc({ logger, stateStore }) {
         message: error instanceof Error ? error.message : String(error),
       });
     });
-    if (!IS_DEV_PROFILE) startCatalogVerificationMonitor({ logger, stateStore });
-    return { ok: true, stdout: result.stdout, restartRequired: !IS_DEV_PROFILE };
+    if (!IS_DEV_PROFILE && canonicalMode !== "external-provider") startCatalogVerificationMonitor({ logger, stateStore });
+    else stopCatalogVerificationMonitor();
+    return { ok: true, stdout: result.stdout, restartRequired: !IS_DEV_PROFILE && canonicalMode !== "external-provider" };
   });
   handle("launcher:setup-mcp", async (_event, input) => {
     const currentMode = stateStore.read().browserInteractionMode;
@@ -1003,7 +1041,17 @@ async function start() {
     supervisor: runtimeSupervisor,
     getBrowserInteractionMode: () => stateStore.read().browserInteractionMode,
   });
-  const configuredInteractionMode = runtimeHost.runtimeConfigSnapshot().config?.browserInteractionMode;
+  let initialRuntimeSnapshot = runtimeHost.runtimeConfigSnapshot();
+  if (initialRuntimeSnapshot.configured
+    && !initialRuntimeSnapshot.explicitCodexIntegrationMode
+    && stateStore.read().integrationMode === "external-provider") {
+    runtimeHost.migrateLegacyExternalProviderMode();
+    initialRuntimeSnapshot = runtimeHost.runtimeConfigSnapshot();
+  }
+  if (initialRuntimeSnapshot.configured && initialRuntimeSnapshot.explicitCodexIntegrationMode) {
+    stateStore.update({ integrationMode: initialRuntimeSnapshot.codexIntegrationMode });
+  }
+  const configuredInteractionMode = initialRuntimeSnapshot.config?.browserInteractionMode;
   if ((configuredInteractionMode === "automatic" || configuredInteractionMode === "manual")
     && stateStore.read().browserInteractionMode !== configuredInteractionMode) {
     stateStore.update({ browserInteractionMode: configuredInteractionMode });
@@ -1166,8 +1214,7 @@ async function start() {
     }
     const runtime = await runtimeSupervisor.startIfConfigured();
     if (runtime.status !== "ready") return runtime;
-    if (configuredRuntime.codexIntegrationMode === "external-provider"
-      || stateStore.read().integrationMode === "external-provider") {
+    if (configuredRuntime.codexIntegrationMode === "external-provider") {
       return { ...runtime, bridgeRouteChanged: false };
     }
     const route = await runtimeHost.connectBridgeRoute();

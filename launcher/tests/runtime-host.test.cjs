@@ -600,6 +600,27 @@ test("external-provider route lifecycle is a no-op", async () => {
   assert.deepEqual(restored, { changed: false, active: false, skipped: true, reason: "external-provider" });
 });
 
+test("legacy external launcher state can migrate runtime mode without touching Codex files", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-web-gpt-mode-migration-"));
+  const runtimeConfigPath = path.join(root, "runtime", "config.json");
+  const legacy = { mode: "browser-only", browserHost: "managed-chrome" };
+  const host = new RuntimeHost({
+    app: { getPath: () => root, getVersion: () => "1.1.3" },
+    logger: { info() {}, warn() {}, error() {} },
+    sourceRoot: "/source",
+    browserDescriptorPath: "/runtime/launcher-browser.json",
+    supervisor: {
+      configPath: runtimeConfigPath,
+      readConfig: () => legacy,
+      readSetupConfig: () => legacy,
+    },
+  });
+  fs.mkdirSync(path.dirname(runtimeConfigPath), { recursive: true });
+  fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(legacy)}\n`);
+  assert.equal(host.migrateLegacyExternalProviderMode(), true);
+  assert.equal(JSON.parse(fs.readFileSync(runtimeConfigPath, "utf8")).codexIntegrationMode, "external-provider");
+});
+
 test("launcher leaves an already connected route unchanged", async () => {
   const fixture = bridgeFixture({ active: true });
   const result = await fixture.host.connectBridgeRoute();
