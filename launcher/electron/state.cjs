@@ -11,6 +11,7 @@ const DEFAULT_STATE = Object.freeze({
   githubOpened: false,
   xOpened: false,
   autoStart: true,
+  integrationMode: "direct-route",
   keepRunningOnClose: true,
   showBrowserDuringTurns: true,
   browserInteractionMode: "automatic",
@@ -34,6 +35,15 @@ function readState(filePath) {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
     if (!parsed || parsed.version !== 1) return { ...DEFAULT_STATE };
     const state = { ...DEFAULT_STATE, ...parsed };
+    // Only an explicit integration mode opts into external-provider. A missing mode keeps
+    // Direct Route for compatibility; bridgeEnabled=false remains legacy disconnected state.
+    const explicitMode = parsed.integrationMode ?? parsed.codexIntegrationMode;
+    state.integrationMode = explicitMode === "external-provider"
+      ? "external-provider"
+      : explicitMode === "direct-route"
+        ? "direct-route"
+        : DEFAULT_STATE.integrationMode;
+    delete state.codexIntegrationMode;
     delete state.bridgeEnabled;
     if (state.language !== null && state.language !== "en" && state.language !== "zh-CN" && state.language !== "ja") {
       state.language = DEFAULT_STATE.language;

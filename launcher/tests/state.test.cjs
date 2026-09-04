@@ -22,6 +22,7 @@ test("launcher state persists onboarding, language, and autostart atomically", (
       githubOpened: false,
       xOpened: false,
       autoStart: true,
+      integrationMode: "direct-route",
       keepRunningOnClose: true,
       showBrowserDuringTurns: true,
       browserInteractionMode: "automatic",
@@ -48,6 +49,7 @@ test("launcher state persists onboarding, language, and autostart atomically", (
       githubOpened: false,
       xOpened: false,
       autoStart: true,
+      integrationMode: "direct-route",
       keepRunningOnClose: false,
       showBrowserDuringTurns: true,
       browserInteractionMode: "automatic",
@@ -113,6 +115,7 @@ test("persisted sidebar corruption is repaired without changing the rest of laun
       githubOpened: false,
       xOpened: false,
       autoStart: true,
+      integrationMode: "direct-route",
       keepRunningOnClose: true,
       showBrowserDuringTurns: true,
       browserInteractionMode: "automatic",
@@ -156,6 +159,34 @@ test("browser interaction defaults to Automatic and preserves a completed onboar
     assert.equal(createStateStore(file).read().browserInteractionMode, "manual");
     fs.writeFileSync(file, JSON.stringify({ version: 1, browserInteractionMode: "unsafe" }));
     assert.equal(createStateStore(file).read().browserInteractionMode, "automatic");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("explicit external-provider state migrates without relying on bridgeEnabled", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-web-gpt-external-mode-state-"));
+  const file = path.join(root, "state.json");
+  try {
+    fs.writeFileSync(file, JSON.stringify({
+      version: 1,
+      integrationMode: "external-provider",
+      bridgeEnabled: true,
+    }));
+    const state = createStateStore(file).read();
+    assert.equal(state.integrationMode, "external-provider");
+    assert.equal("bridgeEnabled" in state, false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("missing integration mode keeps Direct Route even when legacy bridge is disconnected", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-web-gpt-direct-default-state-"));
+  const file = path.join(root, "state.json");
+  try {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, bridgeEnabled: false }));
+    assert.equal(createStateStore(file).read().integrationMode, "direct-route");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -13,6 +13,7 @@ import { VERSION } from "./version";
 export type RuntimeMode = "browser-only" | "full";
 export type BrowserHostMode = "managed-chrome" | "launcher";
 export type BrowserInteractionMode = "automatic" | "manual";
+export type CodexIntegrationMode = "direct-route" | "external-provider";
 export type SubagentProtocol = "compatibility-v1" | "native";
 
 /**
@@ -103,6 +104,8 @@ export interface AppConfig {
   purpose?: "dev-harness";
   releaseVersion: string;
   mode: RuntimeMode;
+  /** Whether CGW owns Codex routing or runs as an independent external provider. */
+  codexIntegrationMode: CodexIntegrationMode;
   subagentProtocol: SubagentProtocol;
   host: "127.0.0.1";
   port: number;
@@ -226,6 +229,7 @@ export function defaultConfig(mode: RuntimeMode = "browser-only"): AppConfig {
     version: 3,
     releaseVersion: VERSION,
     mode,
+    codexIntegrationMode: "direct-route",
     subagentProtocol: "compatibility-v1",
     host: "127.0.0.1",
     port: 17841,
@@ -383,6 +387,12 @@ export function loadConfigForSetup(): AppConfig {
     raw.version = 3;
     raw.browserHost = "managed-chrome";
   }
+  // Early external-provider prototypes persisted the mode under either name. Only an
+  // explicit mode value is authoritative; legacy bridgeEnabled is intentionally ignored here.
+  const legacyMode = raw.codexIntegrationMode ?? raw.integrationMode;
+  if (legacyMode === "external-provider" || legacyMode === "direct-route") {
+    raw.codexIntegrationMode = legacyMode;
+  }
   const interactionMode = raw.browserInteractionMode ?? "automatic";
   const automaticName = raw.automaticAppName
     ?? (interactionMode === "automatic" ? raw.appName : CHATGPT_CONNECTOR_NAME);
@@ -402,6 +412,11 @@ function parseConfig(value: unknown, path: string): AppConfig {
   }
   if (typeof parsed.releaseVersion !== "string" || !parsed.releaseVersion.trim()) throw new Error(`Missing releaseVersion in ${path}`);
   if (parsed.mode !== "browser-only" && parsed.mode !== "full") throw new Error(`Invalid runtime mode in ${path}`);
+  const codexIntegrationMode = parsed.codexIntegrationMode ?? "direct-route";
+  if (codexIntegrationMode !== "direct-route" && codexIntegrationMode !== "external-provider") {
+    throw new Error(`Invalid codexIntegrationMode in ${path}`);
+  }
+  parsed.codexIntegrationMode = codexIntegrationMode;
   const subagentProtocol = parsed.subagentProtocol ?? "compatibility-v1";
   if (subagentProtocol !== "compatibility-v1" && subagentProtocol !== "native") {
     throw new Error(`Invalid subagentProtocol in ${path}`);

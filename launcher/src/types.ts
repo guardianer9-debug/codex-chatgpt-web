@@ -1,6 +1,7 @@
 export type Language = "en" | "zh-CN" | "ja";
 export type LauncherProfile = "production" | "development";
 export type BrowserInteractionMode = "automatic" | "manual";
+export type CodexIntegrationMode = "direct-route" | "external-provider";
 export type Surface = "browser" | "setup" | "mcp" | "activity" | "settings";
 
 export interface LauncherState {
@@ -10,6 +11,7 @@ export interface LauncherState {
   githubOpened: boolean;
   xOpened: boolean;
   autoStart: boolean;
+  integrationMode: CodexIntegrationMode;
   keepRunningOnClose: boolean;
   showBrowserDuringTurns: boolean;
   browserInteractionMode: BrowserInteractionMode;

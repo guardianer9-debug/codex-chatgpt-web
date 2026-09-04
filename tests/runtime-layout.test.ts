@@ -95,6 +95,7 @@ test("user-home expansion accepts native Unix and Windows separators", () => {
 });
 
 test("the direct-turn connector identity migrates known legacy setup without overwriting custom names", () => {
+  expect(defaultConfig("full").codexIntegrationMode).toBe("direct-route");
   expect(defaultConfig("full").appName).toBe(CHATGPT_CONNECTOR_NAME);
   expect(defaultConfig("full").automaticAppName).toBe(CHATGPT_CONNECTOR_NAME);
   expect(defaultConfig("full").manualAppName).toBe(ZERO_RISK_CHATGPT_CONNECTOR_NAME);
@@ -109,6 +110,26 @@ test("the direct-turn connector identity migrates known legacy setup without ove
     .toThrow(/requires a newly created connector named "Codex Native2"/);
   expect(() => resolveSetupConnectorName(undefined, ZERO_RISK_CHATGPT_CONNECTOR_NAME))
     .toThrow(/reserved for Zero Risk/);
+});
+
+test("config migration honors only explicit external-provider mode", () => {
+  const root = join(tmpdir(), `codex-chatgpt-web-external-mode-config-${process.pid}-${Date.now()}`);
+  roots.push(root);
+  process.env.CODEX_CHATGPT_WEB_HOME = root;
+  mkdirSync(root, { recursive: true });
+  const config = { ...defaultConfig("browser-only"), integrationMode: "external-provider", bridgeEnabled: true } as Record<string, unknown>;
+  delete config.codexIntegrationMode;
+  writeFileSync(join(root, "config.json"), `${JSON.stringify(config)}\n`);
+  expect(loadConfigForSetup().codexIntegrationMode).toBe("external-provider");
+
+  const directRoot = join(tmpdir(), `codex-chatgpt-web-direct-mode-config-${process.pid}-${Date.now()}`);
+  roots.push(directRoot);
+  process.env.CODEX_CHATGPT_WEB_HOME = directRoot;
+  mkdirSync(directRoot, { recursive: true });
+  const legacyDisconnected = { ...defaultConfig("browser-only"), bridgeEnabled: false } as Record<string, unknown>;
+  delete legacyDisconnected.codexIntegrationMode;
+  writeFileSync(join(directRoot, "config.json"), `${JSON.stringify(legacyDisconnected)}\n`);
+  expect(loadConfigForSetup().codexIntegrationMode).toBe("direct-route");
 });
 
 test("manual connector selection preserves and restores a custom automatic identity", () => {
