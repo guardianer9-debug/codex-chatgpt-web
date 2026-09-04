@@ -161,7 +161,8 @@ function startCatalogVerificationMonitor({ logger, stateStore }) {
 }
 
 async function restoreCodexRouteAfterRuntimeFailure({ logger, stateStore }) {
-  if (runtimeHost?.runtimeConfigSnapshot?.().codexIntegrationMode === "external-provider") {
+  if (stateStore?.read?.().integrationMode === "external-provider"
+    || runtimeHost?.runtimeConfigSnapshot?.().codexIntegrationMode === "external-provider") {
     return { restored: false, skipped: true };
   }
   try {
@@ -1165,7 +1166,8 @@ async function start() {
     }
     const runtime = await runtimeSupervisor.startIfConfigured();
     if (runtime.status !== "ready") return runtime;
-    if (configuredRuntime.codexIntegrationMode === "external-provider") {
+    if (configuredRuntime.codexIntegrationMode === "external-provider"
+      || stateStore.read().integrationMode === "external-provider") {
       return { ...runtime, bridgeRouteChanged: false };
     }
     const route = await runtimeHost.connectBridgeRoute();
