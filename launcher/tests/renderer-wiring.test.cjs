@@ -246,12 +246,18 @@ test("launcher exposes explicit Codex routing ownership choices", () => {
   assert.match(electronMain, /codexRestartRequired: canonical !== "external-provider"/);
 });
 
+test("runtime integration mode is canonical over stale launcher mirrors", () => {
+  assert.match(electronMain, /initialRuntimeSnapshot\.configured && initialRuntimeSnapshot\.explicitCodexIntegrationMode/);
+  assert.match(electronMain, /stateStore\.update\(\{ integrationMode: initialRuntimeSnapshot\.codexIntegrationMode \}\)/);
+  assert.doesNotMatch(electronMain, /runtimeExternal\s*\|\|\s*launcherStateExternal/);
+});
+
 test("MCP connection remains unavailable until the model catalog is verified", () => {
   assert.match(
     appSource,
-    /manualInteraction \|\| configuringInactiveMode \|\| snapshot\.state\.codexCatalogVerified[\s\S]*?copy\.mcpStepTwoHint[\s\S]*?copy\.mcpCatalogRequired/,
+    /manualInteraction \|\| configuringInactiveMode \|\| catalogReady[\s\S]*?copy\.mcpStepTwoHint[\s\S]*?copy\.mcpCatalogRequired/,
   );
-  assert.match(appSource, /!manualInteraction && !configuringInactiveMode && !snapshot\.state\.codexCatalogVerified/);
+  assert.match(appSource, /!manualInteraction && !configuringInactiveMode && !catalogReady/);
 });
 
 test("MCP navigation remains locked while an operation is active", () => {

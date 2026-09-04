@@ -684,7 +684,7 @@ function registerIpc({ logger, stateStore }) {
       mcpSetupComplete: false,
       mcpRuntimeInstalled: false,
       mcpGuideStep: 0,
-      codexRestartRequired: true,
+      codexRestartRequired: runtimeHost.runtimeConfigSnapshot().codexIntegrationMode !== "external-provider",
       browserInteractionMode: "automatic",
       experimentalBiggerContext: false,
       zeroRiskProEnabled: false,
@@ -777,11 +777,15 @@ function registerIpc({ logger, stateStore }) {
       mcpRuntimeInstalled: true,
       mcpSetupComplete: false,
       mcpGuideStep: 2,
-      codexRestartRequired: IS_DEV_PROFILE ? false : true,
+      codexRestartRequired: IS_DEV_PROFILE || runtimeHost.runtimeConfigSnapshot().codexIntegrationMode === "external-provider" ? false : true,
     });
     send("launcher:state-changed", state);
     if (interactionModeChange) send("launcher:browser-state", browserHost.snapshot());
-    if (!IS_DEV_PROFILE) startCatalogVerificationMonitor({ logger, stateStore });
+    if (!IS_DEV_PROFILE && runtimeHost.runtimeConfigSnapshot().codexIntegrationMode !== "external-provider") {
+      startCatalogVerificationMonitor({ logger, stateStore });
+    } else if (!IS_DEV_PROFILE) {
+      stopCatalogVerificationMonitor();
+    }
     return { ok: true, stdout: result.stdout };
   });
   handle("launcher:set-mcp-step", (_event, step) => {
@@ -803,10 +807,14 @@ function registerIpc({ logger, stateStore }) {
     const state = stateStore.update({
       experimentalBiggerContext: result.enabled,
       codexCatalogVerified: IS_DEV_PROFILE ? true : false,
-      codexRestartRequired: IS_DEV_PROFILE ? false : true,
+      codexRestartRequired: IS_DEV_PROFILE || runtimeHost.runtimeConfigSnapshot().codexIntegrationMode === "external-provider" ? false : true,
     });
     send("launcher:state-changed", state);
-    if (!IS_DEV_PROFILE) startCatalogVerificationMonitor({ logger, stateStore });
+    if (!IS_DEV_PROFILE && runtimeHost.runtimeConfigSnapshot().codexIntegrationMode !== "external-provider") {
+      startCatalogVerificationMonitor({ logger, stateStore });
+    } else if (!IS_DEV_PROFILE) {
+      stopCatalogVerificationMonitor();
+    }
     return state;
   });
   handle("launcher:zero-risk-pro", async (_event, enabled) => {
@@ -822,10 +830,15 @@ function registerIpc({ logger, stateStore }) {
     const state = stateStore.update({
       zeroRiskProEnabled: result.enabled,
       codexCatalogVerified: IS_DEV_PROFILE,
-      codexRestartRequired: !IS_DEV_PROFILE,
+      codexRestartRequired: !IS_DEV_PROFILE
+        && runtimeHost.runtimeConfigSnapshot().codexIntegrationMode !== "external-provider",
     });
     send("launcher:state-changed", state);
-    if (!IS_DEV_PROFILE) startCatalogVerificationMonitor({ logger, stateStore });
+    if (!IS_DEV_PROFILE && runtimeHost.runtimeConfigSnapshot().codexIntegrationMode !== "external-provider") {
+      startCatalogVerificationMonitor({ logger, stateStore });
+    } else if (!IS_DEV_PROFILE) {
+      stopCatalogVerificationMonitor();
+    }
     return state;
   });
   handle("launcher:browser-interaction-mode", async (_event, rawMode) => {
@@ -854,12 +867,18 @@ function registerIpc({ logger, stateStore }) {
       ...(mode === "manual" ? { experimentalBiggerContext: false } : {}),
       ...(result.configured ? {
         codexCatalogVerified: IS_DEV_PROFILE,
-        codexRestartRequired: !IS_DEV_PROFILE,
+        codexRestartRequired: !IS_DEV_PROFILE
+          && runtimeHost.runtimeConfigSnapshot().codexIntegrationMode !== "external-provider",
       } : {}),
     });
     send("launcher:state-changed", state);
     send("launcher:browser-state", browserHost.snapshot());
-    if (!IS_DEV_PROFILE && result.configured) startCatalogVerificationMonitor({ logger, stateStore });
+    if (!IS_DEV_PROFILE && result.configured
+      && runtimeHost.runtimeConfigSnapshot().codexIntegrationMode !== "external-provider") {
+      startCatalogVerificationMonitor({ logger, stateStore });
+    } else if (!IS_DEV_PROFILE && result.configured) {
+      stopCatalogVerificationMonitor();
+    }
     return { state, credentialsRequired: false, targetMode: mode };
   });
   handle("launcher:set-preference", (_event, key, value) => {
@@ -1244,7 +1263,11 @@ async function start() {
         const state = stateStore.update(patch);
         send("launcher:state-changed", state);
       }
-      startCatalogVerificationMonitor({ logger, stateStore });
+      if (runtimeHost.runtimeConfigSnapshot().codexIntegrationMode === "external-provider") {
+        stopCatalogVerificationMonitor();
+      } else {
+        startCatalogVerificationMonitor({ logger, stateStore });
+      }
       return;
     }
     if (runtime.status === "not-configured") {

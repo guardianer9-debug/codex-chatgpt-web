@@ -192,6 +192,21 @@ test("missing integration mode keeps Direct Route even when legacy bridge is dis
   }
 });
 
+test("explicit Direct Route mirror wins over a stale external legacy field", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-web-gpt-direct-over-stale-external-"));
+  const file = path.join(root, "state.json");
+  try {
+    fs.writeFileSync(file, JSON.stringify({
+      version: 1,
+      integrationMode: "direct-route",
+      codexIntegrationMode: "external-provider",
+    }));
+    assert.equal(createStateStore(file).read().integrationMode, "direct-route");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("session refresh reminders are deferred by exactly 48 hours", () => {
   const now = Date.UTC(2026, 7, 5, 12, 0, 0);
   assert.equal(SESSION_REFRESH_REMINDER_INTERVAL_MS, 48 * 60 * 60 * 1000);
