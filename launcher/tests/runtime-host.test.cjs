@@ -77,6 +77,13 @@ test("core setup preserves an existing full-harness installation", async () => {
   ]);
 });
 
+test("external-provider setup never requests a Codex route replacement", async () => {
+  const fixture = hostFor({ mode: "browser-only", codexIntegrationMode: "external-provider" });
+  await fixture.host.setupCore();
+  assert.equal(fixture.invocation().args.includes("--external-provider"), true);
+  assert.equal(fixture.invocation().args.includes("--replace-codex-route"), false);
+});
+
 test("core setup replaces the known legacy connector identity with the direct-turn identity", async () => {
   const fixture = hostFor({ mode: "full", appName: "Codex Native" });
   await fixture.host.setupCore();
@@ -582,6 +589,15 @@ test("launcher connects an inactive installed route", async () => {
   const result = await fixture.host.connectBridgeRoute();
   assert.equal(result.active, true);
   assert.deepEqual(fixture.calls, ["route status", "route connect", "route status"]);
+});
+
+test("external-provider route lifecycle is a no-op", async () => {
+  const fixture = hostFor({ mode: "browser-only", codexIntegrationMode: "external-provider" });
+  fixture.host.bridgeStatus = async () => { throw new Error("route status must not be queried"); };
+  const connected = await fixture.host.connectBridgeRoute();
+  const restored = await fixture.host.restoreBridgeRoute();
+  assert.deepEqual(connected, { changed: false, active: false, skipped: true, reason: "external-provider" });
+  assert.deepEqual(restored, { changed: false, active: false, skipped: true, reason: "external-provider" });
 });
 
 test("launcher leaves an already connected route unchanged", async () => {

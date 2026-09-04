@@ -122,6 +122,7 @@ function stopCatalogVerificationMonitor() {
 }
 
 function startCatalogVerificationMonitor({ logger, stateStore }) {
+  if (runtimeHost?.runtimeConfigSnapshot?.().codexIntegrationMode === "external-provider") return;
   stopCatalogVerificationMonitor();
   const check = async () => {
     const current = stateStore.read();
@@ -160,6 +161,9 @@ function startCatalogVerificationMonitor({ logger, stateStore }) {
 }
 
 async function restoreCodexRouteAfterRuntimeFailure({ logger, stateStore }) {
+  if (runtimeHost?.runtimeConfigSnapshot?.().codexIntegrationMode === "external-provider") {
+    return { restored: false, skipped: true };
+  }
   try {
     const route = await runtimeHost.restoreBridgeRoute("runtime-start-fail-safe");
     if (!route.installed || route.active) return { restored: false };
@@ -1127,7 +1131,7 @@ async function start() {
       const state = stateStore.update({
         coreSetupComplete: true,
         codexCatalogVerified: false,
-        codexRestartRequired: true,
+        codexRestartRequired: runtimeHost.runtimeConfigSnapshot().codexIntegrationMode !== "external-provider",
         experimentalBiggerContext: runtimeHost.runtimeConfigSnapshot().config?.experimentalBiggerContext === true,
         zeroRiskProEnabled: runtimeHost.runtimeConfigSnapshot().config?.zeroRiskProEnabled === true,
         ...(upgrade.mode === "full" ? {
@@ -1161,6 +1165,9 @@ async function start() {
     }
     const runtime = await runtimeSupervisor.startIfConfigured();
     if (runtime.status !== "ready") return runtime;
+    if (configuredRuntime.codexIntegrationMode === "external-provider") {
+      return { ...runtime, bridgeRouteChanged: false };
+    }
     const route = await runtimeHost.connectBridgeRoute();
     return { ...runtime, bridgeRouteChanged: route.changed === true };
   })().then(async (runtime) => {
@@ -1172,6 +1179,9 @@ async function start() {
         mcpRuntimeInstalled: config.mode === "full",
         experimentalBiggerContext: config.experimentalBiggerContext === true,
         zeroRiskProEnabled: config.zeroRiskProEnabled === true,
+        codexRestartRequired: runtimeHost.runtimeConfigSnapshot().codexIntegrationMode === "external-provider"
+          ? false
+          : current.codexRestartRequired,
         ...(runtime.bridgeRouteChanged ? {
           codexCatalogVerified: false,
           codexRestartRequired: true,
