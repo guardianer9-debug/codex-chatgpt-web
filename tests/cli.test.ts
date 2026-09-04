@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { defaultBrokerEndpoint, defaultConfig, ZERO_RISK_CHATGPT_CONNECTOR_NAME } from "../src/config";
+import { defaultBrokerEndpoint, defaultConfig, saveConfig, ZERO_RISK_CHATGPT_CONNECTOR_NAME } from "../src/config";
 import { LAUNCHER_BROWSER_IDLE_URL } from "../src/launcher-browser-host";
 
 setDefaultTimeout(30_000);
@@ -50,6 +50,29 @@ test("setup validates the port before performing runtime work", async () => {
     expect(stderr).not.toContain("Choose either --chrome or --browser-host-descriptor");
     expect(stderr).not.toContain("Unknown arguments");
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("external-provider route commands are read-only even without Codex", async () => {
+  const root = mkdtempSync(join(tmpdir(), "codex-chatgpt-web-cli-external-route-"));
+  try {
+    const codexHome = join(root, "codex");
+    const appHome = join(root, "app");
+    process.env.CODEX_CHATGPT_WEB_HOME = appHome;
+    process.env.CODEX_HOME = codexHome;
+    saveConfig({ ...defaultConfig("browser-only"), codexIntegrationMode: "external-provider" });
+    const result = await runCli(["route", "connect"], {
+      ...process.env,
+      CODEX_HOME: codexHome,
+      CODEX_CHATGPT_WEB_HOME: appHome,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ skipped: true, reason: "external-provider" });
+    expect(existsSync(join(codexHome, "config.toml"))).toBe(false);
+  } finally {
+    delete process.env.CODEX_HOME;
+    delete process.env.CODEX_CHATGPT_WEB_HOME;
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -25,6 +25,7 @@ import {
   installCodexIntegration,
   preflightCodexIntegration,
   readCodexSubagentProtocol,
+  uninstallCodexIntegration,
 } from "./codex-integration";
 import { inspectLauncherBrowserHost } from "./launcher-browser-host";
 import {
@@ -472,6 +473,8 @@ export function preflightSetup(options: SetupOptions): void {
 
 export async function setup(options: SetupOptions): Promise<SetupResult> {
   const { existing, config, launcherOwned } = prepareSetup(options);
+  const relinquishCodexRoute = existing?.codexIntegrationMode === "direct-route"
+    && config.codexIntegrationMode === "external-provider";
   if (ownsCodexRoute(config)) {
     preflightCodexIntegration(config, {
       replaceExistingRoute: options.replaceCodexRoute,
@@ -563,7 +566,6 @@ export async function setup(options: SetupOptions): Promise<SetupResult> {
   if (!beforeService.loaded) await assertPortAvailable(config.host, config.port);
 
   if (!launcherOwned) {
-    saveConfig(config);
     installService(config);
     if (changedWhileLoaded && options.restartService && existing) await restartService(existing);
     await waitForProxy(config);
@@ -603,7 +605,13 @@ export async function setup(options: SetupOptions): Promise<SetupResult> {
   if (launcherOwned && (beforeService.installed || beforeService.loaded)) {
     await uninstallService(existing!);
   }
-  if (launcherOwned) saveConfig(config);
+  if (relinquishCodexRoute) {
+    // This is the one explicit Direct → External transaction. The journal is the source of
+    // truth for the exact previous route; once config is persisted as external, no lifecycle
+    // path may touch Codex again.
+    uninstallCodexIntegration();
+  }
+  saveConfig(config);
   // Keep the previous terminal runtime intact through the ownership handoff. A later launcher
   // setup removes it once the launcher-owned configuration is already the established baseline.
   const migratingTerminalRuntime = Boolean(

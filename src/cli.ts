@@ -75,6 +75,7 @@ Setup options:
   --runtime-key-file PATH      File containing a Tunnels Read+Use runtime key
   --replace-codex-route        Reversibly replace existing Responses or Voice route settings
   --external-provider          Run as an independent OpenAI Responses provider; never manage Codex routing
+  --direct-route               Explicitly make CGW the Codex route owner (mode switch transaction)
   --subagent-protocol MODE     compatibility-v1 (default) or native (advanced)
   --restart-service            Explicitly restart this project's daemon after an update
   --login                      Refresh the stored ChatGPT login even if one exists
@@ -271,7 +272,11 @@ async function setupCommand(args: string[]): Promise<void> {
     mode: full ? "full" : "browser-only",
     ...(portRaw ? { port: Number(portRaw) } : {}),
   };
-  if (takeFlag(args, "--external-provider")) options.codexIntegrationMode = "external-provider";
+  const externalProvider = takeFlag(args, "--external-provider");
+  const directRoute = takeFlag(args, "--direct-route");
+  if (externalProvider && directRoute) throw new Error("Choose at most one Codex integration mode");
+  if (externalProvider) options.codexIntegrationMode = "external-provider";
+  if (directRoute) options.codexIntegrationMode = "direct-route";
   const automaticBrowserInteraction = takeFlag(args, "--automatic-browser-interaction");
   const manualBrowserInteraction = takeFlag(args, "--zero-risk-browser-interaction");
   if (automaticBrowserInteraction && manualBrowserInteraction) {

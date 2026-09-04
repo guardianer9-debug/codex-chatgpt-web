@@ -25,6 +25,7 @@ import {
   MANAGED_ROUTE_COMMENT,
   managedAgentMaxDepthLine,
 } from "../src/codex-integration-shared";
+import { preflightSetup } from "../src/setup";
 
 const roots: string[] = [];
 
@@ -846,4 +847,25 @@ test("external-provider config rejects every Codex route mutator without creatin
   expect(existsSync(getCodexJournalRecoveryPath())).toBe(false);
   expect(existsSync(getCodexModelsCachePath())).toBe(false);
   expect(existsSync(join(appHome, "config.json"))).toBe(true);
+});
+
+test("external-provider lifecycle tolerates an entirely Codex-free machine", () => {
+  const { codexHome } = fixture();
+  const config = { ...defaultConfig("browser-only"), codexIntegrationMode: "external-provider" as const };
+  saveConfig(config);
+  const tracked = [
+    join(codexHome, "config.toml"),
+    getCodexJournalPath(),
+    getCodexJournalRecoveryPath(),
+    getCodexModelsCachePath(),
+  ];
+  const before = tracked.map(path => existsSync(path) ? readFileSync(path) : null);
+  expect(() => preflightSetup({
+    mode: "browser-only",
+    codexIntegrationMode: "external-provider",
+    browserHostDescriptorPath: join(codexHome, "launcher-browser.json"),
+    acknowledgedUnofficial: true,
+  })).not.toThrow();
+  expect(tracked.map(path => existsSync(path) ? readFileSync(path) : null)).toEqual(before);
+  expect(tracked.every(path => !existsSync(path))).toBe(true);
 });
