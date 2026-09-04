@@ -638,7 +638,7 @@ export async function compactRequest(
 
 export function startServer(
   config: AppConfig,
-  dependencies: { fetchUpstream?: NativeFetch } = {},
+  dependencies: { fetchUpstream?: NativeFetch; responseAdapterFactory?: ChatGptWebAdapterFactory } = {},
 ): ReturnType<typeof Bun.serve> {
   if (config.purpose === "dev-harness") {
     throw new Error("DEV harness configuration cannot start a Responses listener");
@@ -806,7 +806,11 @@ export function startServer(
       if (req.method === "POST" && url.pathname === "/v1/responses") {
         if (draining) return formatErrorResponse(503, "server_error", "codex-chatgpt-web is draining for a requested service operation");
         return httpTurns.track(
-          signal => responseRequest(new Request(req, { signal }), config),
+          signal => responseRequest(
+            new Request(req, { signal }),
+            config,
+            dependencies.responseAdapterFactory,
+          ),
           req.signal,
           process.platform,
           "responses",
