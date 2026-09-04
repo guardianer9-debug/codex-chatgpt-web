@@ -270,6 +270,7 @@ async function setupCommand(args: string[]): Promise<void> {
     mode: full ? "full" : "browser-only",
     ...(portRaw ? { port: Number(portRaw) } : {}),
   };
+  if (takeFlag(args, "--external-provider")) options.codexIntegrationMode = "external-provider";
   const automaticBrowserInteraction = takeFlag(args, "--automatic-browser-interaction");
   const manualBrowserInteraction = takeFlag(args, "--zero-risk-browser-interaction");
   if (automaticBrowserInteraction && manualBrowserInteraction) {
@@ -357,7 +358,9 @@ async function setupCommand(args: string[]): Promise<void> {
     stdout.write("One account-level step remains: attach the tunnel to the ChatGPT connector named in config.\n");
     stdout.write("Open: https://chatgpt.com/#settings/Plugins\n");
   }
-  stdout.write("Restart the Codex app once so its native model catalog refreshes through the installed route.\n");
+  if (result.codexRestartRequired) {
+    stdout.write("Restart the Codex app once so its native model catalog refreshes through the installed route.\n");
+  }
 }
 
 async function doctorCommand(args: string[]): Promise<void> {
@@ -494,6 +497,7 @@ async function uninstallCommand(args: string[]): Promise<void> {
   const yes = takeFlag(args, "--yes");
   const keepData = takeFlag(args, "--keep-data");
   const launcherControl = takeFlag(args, "--launcher-control");
+  const externalProvider = takeFlag(args, "--external-provider");
   assertNoArgs(args);
   if (launcherControl) authorizeLauncherControl("uninstall");
   if (!yes && !await confirm("Restore Codex config, stop services, and remove this installation?")) {
@@ -515,7 +519,9 @@ async function uninstallCommand(args: string[]): Promise<void> {
     stopTunnel(config);
   }
   if (config && process.platform === "darwin" && !launcherRuntimeStopped) await uninstallService(config);
-  uninstallCodexIntegration();
+  if (!externalProvider && config?.codexIntegrationMode !== "external-provider") {
+    uninstallCodexIntegration();
+  }
   if (!keepData) rmSync(getConfigDir(), { recursive: true, force: true });
   stdout.write(keepData ? "Uninstalled; private application data was preserved.\n" : "Uninstalled and removed private application data.\n");
 }

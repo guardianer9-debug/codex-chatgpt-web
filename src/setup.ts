@@ -2,13 +2,14 @@ import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { join } from "node:path";
-import type { AppConfig, BrowserInteractionMode, RuntimeMode, SubagentProtocol } from "./config";
+import type { AppConfig, BrowserInteractionMode, CodexIntegrationMode, RuntimeMode, SubagentProtocol } from "./config";
 import {
   currentRuntimeCommand,
   defaultBrokerEndpoint,
   defaultConfig,
   getConfigPath,
   loadConfigForSetup,
+  ownsCodexRoute,
   resolveInteractionConnectorIdentities,
   resolveDevSetupConnectorName,
   saveConfig,
@@ -46,6 +47,7 @@ import { VERSION } from "./version";
 export interface SetupOptions {
   mode: RuntimeMode;
   browserInteractionMode?: BrowserInteractionMode;
+  codexIntegrationMode?: CodexIntegrationMode;
   subagentProtocol?: SubagentProtocol;
   port?: number;
   chromeExecutablePath?: string;
@@ -70,7 +72,7 @@ export interface SetupResult {
   loginCreated: boolean;
   serviceLoaded: boolean;
   tunnelReady: boolean | null;
-  codexRestartRequired: true;
+  codexRestartRequired: boolean;
   connectorSetupRequired: boolean;
 }
 
@@ -240,6 +242,7 @@ async function waitForProxy(config: AppConfig, timeoutMs = 10_000): Promise<void
 function baseConfig(existing: AppConfig | undefined, options: SetupOptions): AppConfig {
   const config = existing ? structuredClone(existing) : defaultConfig(options.mode);
   config.mode = options.mode;
+  if (options.codexIntegrationMode) config.codexIntegrationMode = options.codexIntegrationMode;
   if (options.browserInteractionMode) config.browserInteractionMode = options.browserInteractionMode;
   Object.assign(config, resolveInteractionConnectorIdentities(
     existing,
@@ -412,7 +415,9 @@ function prepareSetup(options: SetupOptions): PreparedSetup {
   const config = baseConfig(existing, {
     ...options,
     subagentProtocol: options.subagentProtocol
-      ?? readCodexSubagentProtocol(existing?.subagentProtocol ?? "compatibility-v1"),
+      ?? (existing?.codexIntegrationMode === "external-provider"
+        ? existing.subagentProtocol
+        : readCodexSubagentProtocol(existing?.subagentProtocol ?? "compatibility-v1")),
   });
   delete config.purpose;
   const launcherOwned = config.browserHost === "launcher";
@@ -458,16 +463,20 @@ export function preflightSetup(options: SetupOptions): void {
       throw new Error("Automatic and Zero Risk require different Tunnel IDs and separate ChatGPT connectors");
     }
   }
-  preflightCodexIntegration(config, {
-    replaceExistingRoute: options.replaceCodexRoute,
-  });
+  if (ownsCodexRoute(config)) {
+    preflightCodexIntegration(config, {
+      replaceExistingRoute: options.replaceCodexRoute,
+    });
+  }
 }
 
 export async function setup(options: SetupOptions): Promise<SetupResult> {
   const { existing, config, launcherOwned } = prepareSetup(options);
-  preflightCodexIntegration(config, {
-    replaceExistingRoute: options.replaceCodexRoute,
-  });
+  if (ownsCodexRoute(config)) {
+    preflightCodexIntegration(config, {
+      replaceExistingRoute: options.replaceCodexRoute,
+    });
+  }
   const refreshTunnelWorker = tunnelWorkerRuntimeChanged(existing, config);
   if (existing && options.restartService) config.controlToken = randomBytes(32).toString("base64url");
   const beforeService = getServiceStatus();
@@ -601,9 +610,11 @@ export async function setup(options: SetupOptions): Promise<SetupResult> {
     launcherOwned && existing && existing.browserHost !== "launcher",
   );
   if (!migratingTerminalRuntime) removeLegacyRuntimeArtifacts(config);
-  installCodexIntegration(config, {
-    replaceExistingRoute: options.replaceCodexRoute,
-  });
+  if (ownsCodexRoute(config)) {
+    installCodexIntegration(config, {
+      replaceExistingRoute: options.replaceCodexRoute,
+    });
+  }
 
   return {
     mode: config.mode,
@@ -611,7 +622,7 @@ export async function setup(options: SetupOptions): Promise<SetupResult> {
     loginCreated,
     serviceLoaded: launcherOwned ? false : getServiceStatus().loaded,
     tunnelReady,
-    codexRestartRequired: true,
+    codexRestartRequired: ownsCodexRoute(config),
     connectorSetupRequired: config.mode === "full",
   };
 }
