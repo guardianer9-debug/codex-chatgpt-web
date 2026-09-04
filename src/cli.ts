@@ -74,6 +74,7 @@ Setup options:
   --tunnel-id ID               Existing OpenAI tunnel id (full mode)
   --runtime-key-file PATH      File containing a Tunnels Read+Use runtime key
   --replace-codex-route        Reversibly replace existing Responses or Voice route settings
+  --external-provider          Run as an independent OpenAI Responses provider; never manage Codex routing
   --subagent-protocol MODE     compatibility-v1 (default) or native (advanced)
   --restart-service            Explicitly restart this project's daemon after an update
   --login                      Refresh the stored ChatGPT login even if one exists
@@ -408,7 +409,9 @@ async function subagentsCommand(args: string[]): Promise<void> {
     throw new Error("The isolated DEV harness has no Codex subagent protocol to configure");
   }
   if (action === "status") {
-    const integration = inspectCodexIntegration();
+    const integration = config.codexIntegrationMode === "external-provider"
+      ? { installed: false, active: false }
+      : inspectCodexIntegration();
     stdout.write(`${JSON.stringify({
       protocol: readCodexSubagentProtocol(config.subagentProtocol),
       installed: integration.installed,
