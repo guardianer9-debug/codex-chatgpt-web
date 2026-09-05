@@ -609,7 +609,16 @@ export async function setup(options: SetupOptions): Promise<SetupResult> {
     // This is the one explicit Direct → External transaction. The journal is the source of
     // truth for the exact previous route; once config is persisted as external, no lifecycle
     // path may touch Codex again.
-    uninstallCodexIntegration();
+    try {
+      uninstallCodexIntegration();
+    } catch (error) {
+      // If Codex has already been changed by another router, CGW no longer owns the route and
+      // must not overwrite that newer value merely to switch its own provider mode. Preserve the
+      // journal as historical evidence; external mode makes it inert for subsequent lifecycle
+      // operations.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("changed after setup")) throw error;
+    }
   }
   saveConfig(config);
   // Keep the previous terminal runtime intact through the ownership handoff. A later launcher
